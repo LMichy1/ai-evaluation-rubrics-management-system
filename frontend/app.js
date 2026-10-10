@@ -267,6 +267,8 @@ const state = {
   submissions: [],
   viewedRubricId: null,
   selectedSubmissionId: null,
+  modelFilter: "", // applied (not just typed) model-name filter for the submissions list
+  submissionsLoadFailed: false,
 };
 
 const rubricById = (id) => state.rubrics.find((rubric) => rubric.id === Number(id));
@@ -630,17 +632,50 @@ async function onSubmissionSubmit(event) {
 }
 
 async function loadSubmissions() {
+  const params = new URLSearchParams({ limit: "50" });
+  if (state.modelFilter) params.set("model_name", state.modelFilter);
   try {
-    const page = await api("/submissions?limit=50");
+    const page = await api(`/submissions?${params}`);
     state.submissions = page.items;
+    state.submissionsLoadFailed = false;
     clearStatus("submission-list-status");
-    if (page.total > page.items.length) {
+    if (state.modelFilter) {
+      const shown = page.total > page.items.length ? `the ${page.items.length} most recent of ` : "";
+      setStatus(
+        "submission-list-status",
+        "info",
+        `Showing ${shown}${page.total} submission${page.total === 1 ? "" : "s"} whose model matches “${state.modelFilter}”.`,
+      );
+    } else if (page.total > page.items.length) {
       setStatus("submission-list-status", "info", `Showing the ${page.items.length} most recent of ${page.total} submissions.`);
     }
   } catch (error) {
-    setStatus("submission-list-status", "error", error.message);
+    // Don't leave rows from a previous filter on screen under a new filter.
+    state.submissions = [];
+    state.submissionsLoadFailed = true;
+    setStatus("submission-list-status", "error", `Could not load submissions: ${error.message}`);
   }
   renderSubmissionRows();
+}
+
+async function onModelFilterSubmit(event) {
+  event.preventDefault();
+  const button = event.submitter || event.target.querySelector("[type=submit]");
+  state.modelFilter = $("model-filter").value.trim();
+  $("model-filter").value = state.modelFilter;
+  await withBusy(button, "Filtering…", loadSubmissions);
+}
+
+async function onModelFilterClear(event) {
+  $("model-filter").value = "";
+  state.modelFilter = "";
+  await withBusy(event.currentTarget, "Clearing…", loadSubmissions);
+}
+
+function emptySubmissionsText() {
+  if (state.submissionsLoadFailed) return "Submissions could not be loaded.";
+  if (state.modelFilter) return "No submissions found for this model filter.";
+  return "No submissions yet.";
 }
 
 function renderSubmissionRows() {
@@ -669,7 +704,7 @@ function renderSubmissionRows() {
     );
   });
   $("submission-rows").replaceChildren(
-    ...(rows.length ? rows : [el("tr", {}, el("td", { colSpan: 6, class: "empty", text: "No submissions yet." }))]),
+    ...(rows.length ? rows : [el("tr", {}, el("td", { colSpan: 6, class: "empty", text: emptySubmissionsText() }))]),
   );
 }
 
@@ -1017,6 +1052,8 @@ function init() {
   $("sub-metadata").addEventListener("input", () => $("sub-metadata").setCustomValidity(""));
   $("submission-form").addEventListener("submit", onSubmissionSubmit);
   $("refresh-submissions").addEventListener("click", (event) => withBusy(event.currentTarget, "Loading…", loadSubmissions));
+  $("model-filter-form").addEventListener("submit", onModelFilterSubmit);
+  $("clear-model-filter").addEventListener("click", onModelFilterClear);
 
   $("score-rubric").addEventListener("change", renderScoreFields);
   $("score-form").addEventListener("submit", onScoreSubmit);

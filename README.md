@@ -254,6 +254,14 @@ curl "http://127.0.0.1:8000/submissions?limit=20&offset=0"
 Newest first. Each entry is a compact summary; fetch a submission by ID for its full text and
 scores.
 
+Filter by model with the optional `model_name` parameter, for example
+`GET /submissions?model_name=demo-llm`. It does **case-insensitive substring matching**:
+`demo-llm` matches `demo-llm`, `demo-llm-1` and `Demo-LLM-Pro`. Surrounding whitespace is
+ignored, a blank value means no filter, and `%` and `_` match literally. Paging and newest-first
+ordering are unchanged, `total` counts only matching submissions, and a filter with no matches
+returns an empty list rather than an error. The web interface's **Filter by model** control uses
+this parameter.
+
 ### `GET /submissions/{id}`
 
 ```bash
