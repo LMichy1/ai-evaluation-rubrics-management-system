@@ -244,6 +244,18 @@ Content-Type: application/json
 GET {{baseUrl}}/submissions/{{createSecondSubmission.response.body.$.id}}
 
 
+### Filter submissions by model
+# Case-insensitive substring match: "demo-llm" matches both demo-llm-1 submissions above.
+# Expected: 200 OK (only submissions whose model_name contains "demo-llm"; total counts matches)
+GET {{baseUrl}}/submissions?model_name=demo-llm&limit=20&offset=0
+
+
+### Model filter with no matches
+# A filter that matches nothing is not an error.
+# Expected: 200 OK  {"items": [], "total": 0, "limit": 20, "offset": 0}
+GET {{baseUrl}}/submissions?model_name=nonexistent-model&limit=20&offset=0
+
+
 ### =========================================================
 ### 7. Error / validation cases
 ### =========================================================

@@ -167,6 +167,16 @@ check, and common validation errors (409, 422, 404).
 
 IDs from earlier responses are reused automatically, and each request notes its expected status.
 
+The submissions list accepts an optional model filter (case-insensitive substring match),
+which `api.http` also demonstrates:
+
+```bash
+curl "http://127.0.0.1:8000/submissions?model_name=demo-llm&limit=20&offset=0"
+```
+
+In the web interface, use **Filter by model** above the submissions list, then **Apply** or
+**Clear**.
+
 ## PostgreSQL
 
 SQLite is all you need for evaluation. To use PostgreSQL instead:
