@@ -140,6 +140,21 @@
               <h3>Recent submissions</h3>
               <button type="button" id="refresh-submissions" class="secondary small">Refresh</button>
             </div>
+            <form id="model-filter-form" class="filter-form" role="search" aria-label="Filter submissions by model">
+              <label for="model-filter">Filter by model</label>
+              <div class="filter-row">
+                <input
+                  id="model-filter"
+                  type="search"
+                  maxlength="200"
+                  placeholder="e.g. demo-llm"
+                  aria-describedby="model-filter-hint"
+                />
+                <button type="submit" class="secondary small">Apply</button>
+                <button type="button" id="clear-model-filter" class="secondary small">Clear</button>
+              </div>
+              <small id="model-filter-hint" class="hint">Case-insensitive; matches any part of the model name.</small>
+            </form>
             <p id="submission-list-status" class="status" role="status" aria-live="polite"></p>
             <div class="table-wrap">
               <table class="data-table">

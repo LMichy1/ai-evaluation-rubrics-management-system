@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query, status
 
 from app.api.errors import error_responses
 from app.db.session import DbSession
-from app.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.schemas.common import DEFAULT_PAGE_SIZE, MAX_NAME_LENGTH, MAX_PAGE_SIZE
 from app.schemas.submissions import SubmissionCreate, SubmissionList, SubmissionRead
 from app.services import submission_service
 
@@ -30,15 +30,29 @@ def create_submission(payload: SubmissionCreate, db: DbSession) -> SubmissionRea
     summary="List submissions",
     description=(
         "Newest first, with limit/offset paging. Each entry has a prompt preview and the number "
-        "of evaluations; fetch a submission by id for its full text and scores."
+        "of evaluations; fetch a submission by id for its full text and scores. Optionally "
+        "filter by `model_name` (case-insensitive substring match; `total` counts matches only)."
     ),
 )
 def list_submissions(
     db: DbSession,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
+    model_name: Annotated[
+        str | None,
+        Query(
+            max_length=MAX_NAME_LENGTH,
+            description=(
+                "Case-insensitive substring match on the model name, e.g. `demo-llm` matches "
+                "`demo-llm-1` and `Demo-LLM-Pro`. Surrounding whitespace is ignored; a blank value "
+                "means no filter."
+            ),
+        ),
+    ] = None,
 ) -> SubmissionList:
-    items, total = submission_service.list_submissions(db, limit=limit, offset=offset)
+    items, total = submission_service.list_submissions(
+        db, limit=limit, offset=offset, model_name=model_name
+    )
     return SubmissionList(items=items, total=total, limit=limit, offset=offset)
 
 

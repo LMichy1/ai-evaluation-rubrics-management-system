@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import NotFoundError
@@ -7,6 +7,7 @@ from app.schemas.submissions import SubmissionCreate, SubmissionRead, Submission
 from app.services.evaluation_service import EVALUATION_LOAD_OPTIONS, to_evaluation_read
 
 PROMPT_PREVIEW_LENGTH = 120
+LIKE_ESCAPE = "\\"
 
 
 def create_submission(db: Session, payload: SubmissionCreate) -> Submission:
@@ -17,23 +18,44 @@ def create_submission(db: Session, payload: SubmissionCreate) -> Submission:
 
 
 def list_submissions(
-    db: Session, *, limit: int, offset: int
+    db: Session, *, limit: int, offset: int, model_name: str | None = None
 ) -> tuple[list[SubmissionSummary], int]:
-    """Newest submissions first, each with its number of evaluations."""
-    total = db.scalar(select(func.count()).select_from(Submission)) or 0
+    """Newest submissions first, each with its number of evaluations.
+
+    `model_name` filters by case-insensitive substring match; blank values are ignored.
+    """
+    model_filter = _model_name_condition(model_name)
+    count_stmt = select(func.count()).select_from(Submission)
     evaluation_count = (
         select(func.count(Evaluation.id))
         .where(Evaluation.submission_id == Submission.id)
         .correlate(Submission)
         .scalar_subquery()
     )
-    rows = db.execute(
-        select(Submission, evaluation_count)
-        .order_by(Submission.id.desc())
-        .limit(limit)
-        .offset(offset)
-    ).all()
+    stmt = select(Submission, evaluation_count)
+    if model_filter is not None:
+        count_stmt = count_stmt.where(model_filter)
+        stmt = stmt.where(model_filter)
+
+    total = db.scalar(count_stmt) or 0
+    rows = db.execute(stmt.order_by(Submission.id.desc()).limit(limit).offset(offset)).all()
     return [_to_summary(submission, count) for submission, count in rows], total
+
+
+def _model_name_condition(model_name: str | None) -> ColumnElement[bool] | None:
+    """Case-insensitive substring match on model_name, portable across SQLite and PostgreSQL.
+
+    LIKE wildcards in the user's text are escaped so that `%` and `_` match literally.
+    """
+    term = (model_name or "").strip()
+    if not term:
+        return None
+    escaped = (
+        term.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2)
+        .replace("%", f"{LIKE_ESCAPE}%")
+        .replace("_", f"{LIKE_ESCAPE}_")
+    )
+    return Submission.model_name.ilike(f"%{escaped}%", escape=LIKE_ESCAPE)
 
 
 def get_submission(
