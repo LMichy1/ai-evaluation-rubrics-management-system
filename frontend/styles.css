@@ -101,6 +101,22 @@ h1 {
   color: var(--error);
 }
 
+/* Service availability banner (cold start / transient failures) */
+.service-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+.service-banner .status {
+  margin: 0;
+  flex: 1 1 260px;
+}
+.service-banner:has(.status:empty) {
+  margin-bottom: 0;
+}
+
 a {
   color: var(--accent);
 }

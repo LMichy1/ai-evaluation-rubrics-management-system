@@ -19,3 +19,11 @@ def test_frontend_does_not_shadow_api_or_docs(client: TestClient) -> None:
     assert client.get("/docs").status_code == 200
     assert "/" not in client.get("/openapi.json").json()["paths"]
     assert client.get("/rubrics").status_code == 200
+
+
+def test_index_has_service_status_region_and_retry(client: TestClient) -> None:
+    html = client.get("/").text
+
+    assert 'id="service-status"' in html
+    assert 'role="status"' in html
+    assert 'id="service-retry"' in html

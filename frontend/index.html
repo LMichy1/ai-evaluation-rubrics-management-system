@@ -24,13 +24,18 @@
           </p>
         </div>
         <nav class="header-links" aria-label="API links">
-          <span id="api-health" class="health" role="status">Checking API…</span>
+          <span id="api-health" class="health">Checking API…</span>
           <a href="/docs">API docs (Swagger)</a>
         </nav>
       </div>
     </header>
 
     <main id="main" class="container">
+      <div class="service-banner">
+        <p id="service-status" class="status" role="status" aria-live="polite"></p>
+        <button type="button" id="service-retry" class="secondary small" hidden>Retry</button>
+      </div>
+
       <!-- 1. Rubrics ------------------------------------------------------------------ -->
       <section class="card" aria-labelledby="rubrics-heading">
         <h2 id="rubrics-heading"><span class="step">1</span> Rubrics</h2>
