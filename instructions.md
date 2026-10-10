@@ -12,8 +12,11 @@ A live instance is available without installing anything:
 - API documentation: <https://ai-evaluation-rubrics.onrender.com/docs>
 
 It runs on Render's free tier, so the first request after a period of inactivity can take around
-a minute while the service wakes up. Everything below still applies for running the project
-locally.
+a minute while the service wakes up. While it wakes, the web interface shows "The demo service may
+be waking up. Retrying…" and retries read requests automatically, up to three times. If the
+service still doesn't respond, use the **Retry** button. Form submissions are never retried
+automatically, so check the lists before resubmitting after an error. Everything below still
+applies for running the project locally.
 
 ## Requirements
 

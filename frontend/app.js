@@ -103,10 +103,79 @@ function errorMessage(data, status) {
   return `Request failed (HTTP ${status}).`;
 }
 
-async function api(path, { method = "GET", body } = {}) {
+// ---------------------------------------------------------------------------------------
+// Cold-start resilience
+//
+// A free Render instance sleeps when idle; while it wakes, requests can hang for a while or
+// fail with a network error or 502/503/504. Safe GET requests are retried a bounded number of
+// times with exponential backoff. Writes (POST) are never retried automatically, because a
+// request that timed out may still have been applied.
+// ---------------------------------------------------------------------------------------
+
+const RETRY_DELAYS_MS = [500, 1000, 2000]; // up to three retries (four attempts in total)
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+const SLOW_REQUEST_NOTICE_MS = 5000;
+const RECOVERED_NOTICE_MS = 4000;
+
+const WAKING_MESSAGE = "The demo service may be waking up. Retrying…";
+const SLOW_MESSAGE = "The demo service may be waking up. The first request after a quiet period can take up to a minute…";
+const UNAVAILABLE_MESSAGE = "The service is not responding. It may still be waking up; try again in a moment.";
+const WRITE_NOT_RETRIED_MESSAGE =
+  "The service did not respond, so this change may or may not have been saved. It was not retried " +
+  "automatically. Refresh the lists to check before submitting again.";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Drives the header badge and the service banner from the outcome of API requests. */
+const serviceStatus = {
+  state: "checking",
+  waiting: new Set(), // requests currently slow or retrying
+  recoveredTimer: null,
+
+  /** A request is slow or retrying. */
+  waking(requestId, message = WAKING_MESSAGE) {
+    this.waiting.add(requestId);
+    this.render("waking", message);
+  },
+
+  /** The server answered (any non-transient response, including 4xx). */
+  reachable(requestId) {
+    this.waiting.delete(requestId);
+    if (this.waiting.size) return;
+    const recovered = this.state === "waking" || this.state === "unavailable";
+    this.render("online", recovered ? "The service is back online." : "");
+  },
+
+  /** A request gave up on a transient failure. */
+  unreachable(requestId) {
+    this.waiting.delete(requestId);
+    this.render("unavailable", UNAVAILABLE_MESSAGE);
+  },
+
+  render(state, message) {
+    this.state = state;
+    clearTimeout(this.recoveredTimer);
+    const badge = $("api-health");
+    badge.textContent = { checking: "Checking API…", waking: "API waking up…", online: "API online", unavailable: "API unavailable" }[state];
+    badge.className = { online: "health ok", unavailable: "health down" }[state] || "health";
+
+    const kind = { waking: "info", online: "success", unavailable: "error" }[state] || "";
+    if (message) setStatus("service-status", kind, message);
+    else clearStatus("service-status");
+    $("service-retry").hidden = state !== "unavailable";
+
+    if (state === "online" && message) {
+      this.recoveredTimer = setTimeout(() => clearStatus("service-status"), RECOVERED_NOTICE_MS);
+    }
+  },
+};
+
+let requestCounter = 0;
+
+/** One fetch attempt. Returns {response, data} or {networkError: true}; never throws. */
+async function attemptRequest(path, method, body) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-
   let response;
   try {
     response = await fetch(path, {
@@ -115,20 +184,50 @@ async function api(path, { method = "GET", body } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError("Could not reach the API. Is the server running?", 0);
+    return { networkError: true };
   }
 
   let data = null;
-  const text = await response.text();
+  const text = await response.text().catch(() => "");
   if (text) {
     try {
       data = JSON.parse(text);
     } catch {
-      data = null; // e.g. a plain-text 500 response; never shown raw
+      data = null; // e.g. a plain-text 500 or proxy error page; never shown raw
     }
   }
-  if (!response.ok) throw new ApiError(errorMessage(data, response.status), response.status);
-  return data;
+  return { response, data };
+}
+
+async function api(path, { method = "GET", body } = {}) {
+  const requestId = (requestCounter += 1);
+  const retryable = method === "GET"; // only safe, idempotent requests are retried
+  const slowTimer = setTimeout(() => serviceStatus.waking(requestId, SLOW_MESSAGE), SLOW_REQUEST_NOTICE_MS);
+
+  try {
+    for (let attempt = 0; ; attempt += 1) {
+      const result = await attemptRequest(path, method, body);
+      const transient = result.networkError || TRANSIENT_STATUSES.has(result.response.status);
+
+      if (!transient) {
+        serviceStatus.reachable(requestId);
+        const { response, data } = result;
+        if (!response.ok) throw new ApiError(errorMessage(data, response.status), response.status);
+        return data;
+      }
+
+      if (!retryable || attempt >= RETRY_DELAYS_MS.length) {
+        serviceStatus.unreachable(requestId);
+        const status = result.networkError ? 0 : result.response.status;
+        throw new ApiError(retryable ? UNAVAILABLE_MESSAGE : WRITE_NOT_RETRIED_MESSAGE, status);
+      }
+
+      serviceStatus.waking(requestId);
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  } finally {
+    clearTimeout(slowTimer);
+  }
 }
 
 /** Disable a button while an async action runs, preventing double submissions. */
@@ -888,15 +987,21 @@ function renderAgreement(agreement) {
 // ---------------------------------------------------------------------------------------
 
 async function checkHealth() {
-  const badge = $("api-health");
+  // The badge is driven by serviceStatus; a database problem surfaces as a 503 from /health,
+  // which is retried like any other transient failure.
   try {
-    const health = await api("/health");
-    badge.textContent = health.status === "ok" ? "API online" : "API degraded";
-    badge.className = health.status === "ok" ? "health ok" : "health down";
+    await api("/health");
   } catch {
-    badge.textContent = "API unavailable";
-    badge.className = "health down";
+    // already reflected in the service banner
   }
+}
+
+/** Manual recovery after automatic retries were exhausted: reload everything the page shows. */
+async function retryConnection(event) {
+  await withBusy(event.currentTarget, "Retrying…", async () => {
+    serviceStatus.render("waking", WAKING_MESSAGE);
+    await Promise.all([checkHealth(), loadRubrics(), loadSubmissions()]);
+  });
 }
 
 function init() {
@@ -925,6 +1030,8 @@ function init() {
     $("agreement-output").replaceChildren();
     return run(event.currentTarget, "Calculating…", "results-status", loadAgreement);
   });
+
+  $("service-retry").addEventListener("click", retryConnection);
 
   renderScoreFields();
   checkHealth();

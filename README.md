@@ -30,6 +30,18 @@ a reviewer can run the whole workflow in a browser without Node.js or a second s
 > The demo runs on Render's free tier and may take around a minute to wake after a period of
 > inactivity. Data is stored in a free Render PostgreSQL database.
 
+The web interface handles a waking or briefly unavailable service gracefully:
+
+- Read-only (GET) requests that fail with a network error or HTTP 502/503/504 are retried up to
+  three times, after about 0.5 s, 1 s and 2 s. A banner reports "The demo service may be waking
+  up. Retrying…" and clears once the service responds.
+- A request that is still waiting after 5 seconds shows the same "waking up" notice.
+- If every retry fails, the page shows an error with a **Retry** button.
+- Write requests (POST) are never retried automatically, because a request that timed out may
+  still have been saved. The page says so and asks you to refresh before submitting again.
+
+This only smooths over a cold start. It does not keep the free service awake.
+
 ## Features
 
 - Rubric creation with a common integer scale, weighted criteria and complete score anchors
@@ -429,6 +441,8 @@ future improvements below).
   is enabled. The UI renders all API data with `textContent` and DOM nodes, never `innerHTML`, so
   prompts and model outputs that contain HTML stay plain text. A Content-Security-Policy restricts
   the page to same-origin scripts.
+- **Cold-start resilience:** the UI retries safe GET requests a bounded number of times and
+  never retries writes, so a slow or failed POST cannot create duplicate records.
 - **Bounded input:** text fields, the size of `model_metadata`, the number of criteria and the
   number of scale points all have limits. Unknown request fields are rejected.
 
